@@ -334,12 +334,18 @@ async function runQuery() {
 
     const records = {}; // Key: "name|lot", Value: { name, lot, ehrCount, irisCount }
     const infoRecordsByReason = {}; // Store informational IRIS rows by reason
+    const lotTracker = {}; // Key: "lot", Value: { received: 0, irisGiven: 0, ehrGiven: 0 }
 
     // Process EHR Data
     ehrData.forEach(row => {
         const name = normalizeName(row['Patient Name']);
         const lot = cleanString(row['vaccine lot #']);
         
+        if (lot) {
+            if (!lotTracker[lot]) lotTracker[lot] = { received: 0, irisGiven: 0, ehrGiven: 0 };
+            lotTracker[lot].ehrGiven += 1;
+        }
+
         if (!name && !lot) return; // Skip empty rows
 
         const key = `${name}|${lot}`;
@@ -355,6 +361,17 @@ async function runQuery() {
         const lot = cleanString(row['Lot Number']);
         const reason = cleanString(row['Transaction Reason']);
         const qty = parseFloat(row['Quantity']) || 0;
+
+        // Tracking for Lot KPI
+        if (lot) {
+            if (!lotTracker[lot]) lotTracker[lot] = { received: 0, irisGiven: 0, ehrGiven: 0 };
+            
+            if (reason === 'immunizations given') {
+                lotTracker[lot].irisGiven += Math.abs(qty);
+            } else if (reason === 'receipt of inventory') {
+                lotTracker[lot].received += qty;
+            }
+        }
 
         // User requested ONLY 'immunizations given' run against EHR data
         if (reason === 'immunizations given') {
@@ -405,6 +422,9 @@ async function runQuery() {
     renderTable('table-missing-ehr', missingEhr);
     renderTable('table-mismatch', mismatch);
     
+    // Render Lot KPI Table
+    renderLotKpiTable('table-lot-kpi', lotTracker);
+    
     // Render the informational IRIS records dynamically
     renderInfoTabs(infoRecordsByReason);
 
@@ -437,6 +457,37 @@ function renderTable(tableId, data) {
             <td style="text-transform: uppercase">${rec.lot}</td>
             <td>${rec.ehrCount}</td>
             <td>${rec.irisCount}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+    
+    initDataTable(tableId);
+}
+
+function renderLotKpiTable(tableId, lotTracker) {
+    if (dtInstances[tableId]) {
+        dtInstances[tableId].destroy();
+        delete dtInstances[tableId];
+    }
+    
+    const tbody = document.getElementById(tableId).querySelector('tbody');
+    tbody.innerHTML = '';
+    
+    const lots = Object.keys(lotTracker).sort();
+    
+    if (lots.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="4" class="empty-state">No lot numbers found.</td></tr>`;
+        return;
+    }
+
+    lots.forEach(lot => {
+        const data = lotTracker[lot];
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td style="text-transform: uppercase; font-weight: bold;">${lot}</td>
+            <td>${data.received}</td>
+            <td>${data.irisGiven}</td>
+            <td>${data.ehrGiven}</td>
         `;
         tbody.appendChild(tr);
     });
