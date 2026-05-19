@@ -374,3 +374,26 @@ tr:hover td {
 .dataTable-info {
     color: var(--text-secondary);
 }
+
+/* Badge Styling for Working List */
+.badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.85em;
+    font-weight: 600;
+}
+
+.badge.error {
+    background-color: rgba(244, 67, 54, 0.2);
+    color: #ff8a80;
+}
+
+.badge.warning {
+    background-color: rgba(255, 152, 0, 0.2);
+    color: #ffcc80;
+}
+
+.badge.caution {
+    background-color: rgba(33, 150, 243, 0.2);
+    color: #90caf9;
+}

@@ -168,6 +168,29 @@
                 <div class="tabs" id="info-tabs" style="flex-wrap: wrap;"></div>
                 <div id="info-tab-contents"></div>
             </section>
+
+            <section id="working-list-section" class="results-section hidden" style="margin-top: 3rem; margin-bottom: 5rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                    <h2 style="color: var(--primary-color);">Discrepancy Working List</h2>
+                    <button id="btn-clear-progress" class="btn secondary" style="background-color: var(--danger-color); color: white; border: none;">Clear Progress</button>
+                </div>
+                <p style="margin-bottom: 1rem; color: var(--text-secondary);">This master list contains all identified discrepancies. Your progress is automatically saved to your browser's local storage.</p>
+                <div style="background-color: var(--surface-color); border-radius: var(--border-radius); box-shadow: 0 4px 6px rgba(0,0,0,0.1); padding: 1rem;">
+                    <table id="table-working-list">
+                        <thead>
+                            <tr>
+                                <th style="width: 50px;">Done</th>
+                                <th>Patient Name</th>
+                                <th>Lot Number</th>
+                                <th>Discrepancy Type</th>
+                                <th>EHR Count</th>
+                                <th>IRIS Count</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </section>
         </main>
     </div>
     <script src="app.js"></script>

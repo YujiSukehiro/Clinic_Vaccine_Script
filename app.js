@@ -8,6 +8,28 @@ let irisData = [];
 // Store datatable instances to destroy them before re-rendering
 const dtInstances = {};
 
+// LocalStorage Cache for Working List
+const CACHE_KEY = 'vaccine_script_working_list_cache';
+
+function getResolvedCache() {
+    const cache = localStorage.getItem(CACHE_KEY);
+    return cache ? JSON.parse(cache) : {};
+}
+
+function setResolvedStatus(key, isResolved) {
+    const cache = getResolvedCache();
+    if (isResolved) {
+        cache[key] = true;
+    } else {
+        delete cache[key];
+    }
+    localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+}
+
+function clearResolvedCache() {
+    localStorage.removeItem(CACHE_KEY);
+}
+
 function initDataTable(tableId) {
     if (dtInstances[tableId]) {
         dtInstances[tableId].destroy();
@@ -25,8 +47,36 @@ document.addEventListener('DOMContentLoaded', () => {
     setupDropzone('iris-dropzone', 'iris-upload', 'iris-file-list', irisFiles, () => checkReady());
     setupDropzone('combined-dropzone', 'combined-upload', 'combined-file-list', combinedFiles, () => checkReady());
 
-    document.getElementById('btn-export').addEventListener('click', exportExcel);
+    document.getElementById('btn-export').addEventListener('click', () => {
+        exportExcel();
+    });
     document.getElementById('btn-query').addEventListener('click', runQuery);
+
+    // Global delegated listener for resolved checkboxes (survives DataTables DOM rewrites)
+    document.addEventListener('change', (e) => {
+        if (e.target && e.target.classList.contains('resolved-checkbox')) {
+            const key = e.target.getAttribute('data-key');
+            setResolvedStatus(key, e.target.checked);
+            
+            // Visual feedback
+            if (e.target.checked) {
+                e.target.closest('tr').style.opacity = '0.5';
+            } else {
+                e.target.closest('tr').style.opacity = '1';
+            }
+        }
+    });
+
+    // Clear Progress Button
+    document.getElementById('btn-clear-progress').addEventListener('click', () => {
+        if (confirm('Are you sure you want to clear your progress? This will uncheck all boxes in your Working List and cannot be undone.')) {
+            clearResolvedCache();
+            // Re-render the working list to uncheck boxes if data exists
+            if (window.currentWorkingListData) {
+                renderWorkingList('table-working-list', window.currentWorkingListData);
+            }
+        }
+    });
 
     // Tab switching
     document.querySelectorAll('.tab').forEach(tab => {
@@ -399,19 +449,37 @@ async function runQuery() {
     const missingIris = [];
     const missingEhr = [];
     const mismatch = [];
+    const allDiscrepancies = [];
 
-    Object.values(records).forEach(rec => {
+    Object.keys(records).forEach(key => {
+        const rec = records[key];
         // Round iris count to avoid float precision issues
         rec.irisCount = Math.round(rec.irisCount);
         
+        let type = '';
         if (rec.ehrCount > 0 && rec.irisCount === 0) {
             missingIris.push(rec);
+            type = 'Missing in IRIS';
         } else if (rec.ehrCount === 0 && rec.irisCount > 0) {
             missingEhr.push(rec);
+            type = 'Missing in EHR';
         } else if (rec.ehrCount !== rec.irisCount && rec.ehrCount > 0 && rec.irisCount > 0) {
             mismatch.push(rec);
+            type = 'Mismatched Counts';
+        }
+        
+        if (type) {
+            const uniqueKey = `${rec.name}|${rec.lot}|${type}`;
+            allDiscrepancies.push({
+                ...rec,
+                type: type,
+                uniqueKey: uniqueKey
+            });
         }
     });
+    
+    // Store globally so the clear button can re-render it
+    window.currentWorkingListData = allDiscrepancies;
 
     // Update UI
     document.getElementById('count-missing-iris').innerText = missingIris.length;
@@ -425,10 +493,15 @@ async function runQuery() {
     // Render Lot KPI Table
     renderLotKpiTable('table-lot-kpi', lotTracker);
     
+    // Render Working List Table
+    renderWorkingList('table-working-list', allDiscrepancies);
+    
     // Render the informational IRIS records dynamically
     renderInfoTabs(infoRecordsByReason);
 
     document.getElementById('results-section').classList.remove('hidden');
+    document.getElementById('working-list-section').classList.remove('hidden');
+    
     if (Object.keys(infoRecordsByReason).length > 0) {
         document.getElementById('info-section').classList.remove('hidden');
     }
@@ -493,6 +566,81 @@ function renderLotKpiTable(tableId, lotTracker) {
     });
     
     initDataTable(tableId);
+}
+
+function renderWorkingList(tableId, data) {
+    if (dtInstances[tableId]) {
+        dtInstances[tableId].destroy();
+        delete dtInstances[tableId];
+    }
+    
+    const tableEl = document.getElementById(tableId);
+    const tbody = tableEl.querySelector('tbody');
+    tbody.innerHTML = '';
+    
+    if (data.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="empty-state">No discrepancies found! You're all caught up.</td></tr>`;
+        return;
+    }
+
+    const cache = getResolvedCache();
+
+    data.forEach(rec => {
+        const tr = document.createElement('tr');
+        const isChecked = cache[rec.uniqueKey] ? 'checked' : '';
+        
+        tr.innerHTML = `
+            <td style="text-align: center;">
+                <input type="checkbox" class="resolved-checkbox" data-key="${rec.uniqueKey}" ${isChecked} style="width: 20px; height: 20px; cursor: pointer;">
+            </td>
+            <td style="text-transform: capitalize">${rec.name}</td>
+            <td style="text-transform: uppercase">${rec.lot}</td>
+            <td><span class="badge ${rec.type === 'Missing in EHR' ? 'error' : (rec.type === 'Missing in IRIS' ? 'warning' : 'caution')}">${rec.type}</span></td>
+            <td>${rec.ehrCount}</td>
+            <td>${rec.irisCount}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+    
+    // Set initial opacity before datatable init just to be safe
+    tbody.querySelectorAll('.resolved-checkbox:checked').forEach(cb => {
+        cb.closest('tr').style.opacity = '0.5';
+    });
+    
+    initDataTable(tableId);
+    
+    // DataTables aggressively redraws the DOM on pagination/sorting, which erases checkbox states.
+    // Use a MutationObserver to constantly force the DOM checkboxes to match our LocalStorage cache.
+    const dtWrapper = tableEl.closest('.dataTable-wrapper');
+    if (dtWrapper) {
+        const observer = new MutationObserver(() => {
+            const cache = getResolvedCache();
+            dtWrapper.querySelectorAll('.resolved-checkbox').forEach(cb => {
+                const key = cb.getAttribute('data-key');
+                cb.checked = !!cache[key];
+                if (cb.checked) {
+                    cb.closest('tr').style.opacity = '0.5';
+                } else {
+                    cb.closest('tr').style.opacity = '1';
+                }
+            });
+        });
+        
+        const newTbody = dtWrapper.querySelector('tbody');
+        if (newTbody) {
+            observer.observe(newTbody, { childList: true, subtree: true });
+            
+            // Trigger initially
+            const cache = getResolvedCache();
+            newTbody.querySelectorAll('.resolved-checkbox').forEach(cb => {
+                const key = cb.getAttribute('data-key');
+                cb.checked = !!cache[key];
+                if (cb.checked) {
+                    cb.closest('tr').style.opacity = '0.5';
+                }
+            });
+        }
+    }
 }
 
 function renderInfoTabs(recordsByReason) {
