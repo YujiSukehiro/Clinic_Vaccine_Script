@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vaccination Data Cross-Reference</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Load PapaParse for CSV parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <!-- Load SheetJS for Excel generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- Load Simple-DataTables for advanced tables -->
+    <link href="https://cdn.jsdelivr.net/npm/simple-datatables@latest/dist/style.css" rel="stylesheet" type="text/css">
+    <script src="https://cdn.jsdelivr.net/npm/simple-datatables@latest" type="text/javascript"></script>
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <h1>Vaccination Data Cross-Reference</h1>
+            <p>Upload EHR CSV and IRIS Excel files to find documentation discrepancies.</p>
+        </header>
+
+        <main>
+            <section class="upload-section">
+                <div class="upload-zone" id="ehr-dropzone">
+                    <div class="upload-icon">📄</div>
+                    <h3>Upload EHR CSV(s)</h3>
+                    <p>Drag & drop or click to select</p>
+                    <input type="file" id="ehr-upload" multiple accept=".csv">
+                    <div class="file-list" id="ehr-file-list"></div>
+                </div>
+
+                <div class="upload-zone" id="iris-dropzone">
+                    <div class="upload-icon">📊</div>
+                    <h3>Upload IRIS File(s)</h3>
+                    <p>Drag & drop or click to select (.xlsx, .csv)</p>
+                    <input type="file" id="iris-upload" multiple accept=".csv,.xlsx,.xls">
+                    <div class="file-list" id="iris-file-list"></div>
+                </div>
+
+                <div class="upload-zone" id="combined-dropzone" style="grid-column: span 2;">
+                    <div class="upload-icon">📁</div>
+                    <h3>...Or Upload Combined Excel</h3>
+                    <p>Drag & drop a previously exported Combined_Vaccine_Data.xlsx</p>
+                    <input type="file" id="combined-upload" accept=".xlsx,.xls">
+                    <div class="file-list" id="combined-file-list"></div>
+                </div>
+            </section>
+
+            <section class="action-bar">
+                <div class="status-indicator">
+                    <span id="data-status">Awaiting files...</span>
+                </div>
+                <div class="buttons">
+                    <button id="btn-export" class="btn secondary" disabled>Export Combined Excel</button>
+                    <button id="btn-query" class="btn primary" disabled>Run Query</button>
+                </div>
+            </section>
+
+            <section id="raw-data-section" class="results-section hidden" style="margin-bottom: 3rem;">
+                <h2 style="margin-bottom: 1.5rem;">Raw Data Preview</h2>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+                    <div>
+                        <h3 style="margin-bottom: 1rem;">EHR Data</h3>
+                        <div style="max-height: 400px; overflow-y: auto; background-color: var(--surface-color); border-radius: var(--border-radius); box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                            <table id="raw-ehr-table">
+                                <thead></thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 style="margin-bottom: 1rem;">IRIS Data</h3>
+                        <div style="max-height: 400px; overflow-y: auto; background-color: var(--surface-color); border-radius: var(--border-radius); box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                            <table id="raw-iris-table">
+                                <thead></thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="results-section" class="results-section hidden">
+                <div class="summary-cards">
+                    <div class="card warning">
+                        <div class="card-title">Missing in EHR</div>
+                        <div class="card-value" id="count-missing-ehr">0</div>
+                    </div>
+                    <div class="card danger">
+                        <div class="card-title">Missing in IRIS</div>
+                        <div class="card-value" id="count-missing-iris">0</div>
+                    </div>
+                    <div class="card info">
+                        <div class="card-title">Mismatched Counts</div>
+                        <div class="card-value" id="count-mismatch">0</div>
+                    </div>
+                </div>
+
+                <div class="tabs">
+                    <button class="tab active" data-target="tab-missing-iris">Missing in IRIS</button>
+                    <button class="tab" data-target="tab-missing-ehr">Missing in EHR</button>
+                    <button class="tab" data-target="tab-mismatch">Mismatched Counts</button>
+                </div>
+
+                <div class="tab-content active" id="tab-missing-iris">
+                    <table id="table-missing-iris">
+                        <thead>
+                            <tr>
+                                <th>Patient Name</th>
+                                <th>Lot Number</th>
+                                <th>EHR Count</th>
+                                <th>IRIS Count</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+
+                <div class="tab-content" id="tab-missing-ehr">
+                    <table id="table-missing-ehr">
+                        <thead>
+                            <tr>
+                                <th>Patient Name</th>
+                                <th>Lot Number</th>
+                                <th>EHR Count</th>
+                                <th>IRIS Count</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+
+                <div class="tab-content" id="tab-mismatch">
+                    <table id="table-mismatch">
+                        <thead>
+                            <tr>
+                                <th>Patient Name</th>
+                                <th>Lot Number</th>
+                                <th>EHR Count</th>
+                                <th>IRIS Count</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section id="info-section" class="results-section hidden" style="margin-top: 3rem;">
+                <h2 style="margin-bottom: 1.5rem; color: var(--info-color);">Informational IRIS Records</h2>
+                <p style="margin-bottom: 1rem; color: var(--text-secondary);">These records were intentionally skipped during discrepancy checking and are categorized by Transaction Reason.</p>
+                <div class="tabs" id="info-tabs" style="flex-wrap: wrap;"></div>
+                <div id="info-tab-contents"></div>
+            </section>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
